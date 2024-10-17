@@ -1,11 +1,12 @@
 use jsonrpsee::server::{RpcModule, ServerBuilder, ServerHandle};
 use alloy::rpc::types::TransactionRequest;
-use std::sync::Arc;
+use std::sync::Arc; 
 use anyhow::Result; 
 
 use crate::sequencer::sequencer::Sequencer;
+use tokio::sync::Mutex; 
 
-pub async fn start_rpc_server(sequencer: Arc<Sequencer>, port: u16) -> Result<ServerHandle> {
+pub async fn start_rpc_server(sequencer: Arc<Mutex<Sequencer>>, port: u16) -> Result<ServerHandle> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let server = ServerBuilder::default().build(addr).await?;
     let mut module = RpcModule::new(());
@@ -17,7 +18,7 @@ pub async fn start_rpc_server(sequencer: Arc<Sequencer>, port: u16) -> Result<Se
             async move {
                 // Extract the TransactionRequest from the parameters
                 let tx: TransactionRequest = params.one()?;
-                println!("{:?}", tx);
+                let mut sequencer = sequencer.lock().await; 
                 sequencer.send_transaction(tx).await
             }
         })
