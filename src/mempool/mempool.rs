@@ -40,34 +40,11 @@ impl Mempool {
     async fn log_batch(&self, batch: &[TimestampedTransaction]) {
         println!("Stored batch of transactions:");
         for transaction in batch {
-            let tx_hash = format!("{:x}", keccak256(serde_json::to_string(transaction).unwrap()));
-            println!("transaction hashes in batch: {}", tx_hash);
-            // Add more details to log as necessary
+            let serialized_tx = serde_json::to_string(transaction).unwrap();
+            let tx_hash = format!("{:x}", keccak256(serialized_tx.clone()));
+            println!("Transaction Hash in batch: {}", tx_hash);
+            println!("Transaction Data: {:?}", transaction);
         }
     }
-    
-    // pub async fn print_all_transactions(&self) {
-    //     let db = self.db.lock().await;
-    //     let iter = db.iterator(rocksdb::IteratorMode::Start);
-    
-    //     for result in iter {
-    //         match result {
-    //             Ok((key, value)) => {
-    //                 let tx_hash = String::from_utf8_lossy(&key).to_string();
-    //                 let value_str = String::from_utf8_lossy(&value).to_string();
-    
-    //                 let tx_data: TimestampedTransaction = serde_json::from_str(&value_str)
-    //                     .expect("Failed to deserialize transaction data");
-    //                 // println!("Transaction Hash: {}\nTransaction Data: {:?}\n", tx_hash, tx_data);
-    //                 println!("Transaction Hash: {}", tx_hash);
-
-    //             }
-    //             Err(e) => {
-    //                 eprintln!("Error while iterating: {:?}", e);
-    //             }
-    //         }
-    //     }
-    // }
-
 
 }
