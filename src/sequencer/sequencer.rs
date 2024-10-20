@@ -1,17 +1,17 @@
 use crate::mempool::mempool::Mempool; 
+use alloy::rpc::types::TransactionRequest;
 use jsonrpsee::core::RpcResult;
 use jsonrpsee::types::error::ErrorObjectOwned;
-use alloy::rpc::types::TransactionRequest;
-use alloy::primitives::keccak256;
 use std::collections::VecDeque;
+use alloy::primitives::keccak256;
 
 pub struct Sequencer {
-    mempool: crate::mempool::mempool::Mempool,
+    mempool: Mempool,
     pending_transactions: VecDeque<TransactionRequest>,
 }
 
 impl Sequencer {    
-    pub fn new(mempool: Mempool) -> Self { 
+    pub fn new(mempool: Mempool) -> Self {
         Self {
             mempool,
             pending_transactions: VecDeque::new(),
@@ -63,10 +63,4 @@ impl Sequencer {
         Ok(tx_hash)
     }
     
-    
-    
-    
 }
-
-
-

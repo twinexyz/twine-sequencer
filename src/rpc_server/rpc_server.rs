@@ -1,5 +1,5 @@
 use jsonrpsee::server::{RpcModule, ServerBuilder, ServerHandle};
-use alloy::rpc::types::TransactionRequest;
+use alloy::rpc::types::{TransactionRequest, Signature}; // Import necessary types
 use std::sync::Arc; 
 use anyhow::Result; 
 
@@ -16,10 +16,16 @@ pub async fn start_rpc_server(sequencer: Arc<Mutex<Sequencer>>, port: u16) -> Re
         .register_async_method("eth_sendTransaction", move |params, _| {
             let sequencer = Arc::clone(&sequencer_clone);
             async move {
-                // Extract the TransactionRequest from the parameters
-                let tx: TransactionRequest = params.one()?;
+                // Extract the signed transaction from the parameters
+                let signed_tx: TransactionRequest = params.one()?; // Make sure to use the correct type
+
+                // Log the entire signed transaction
+                println!("Received signed transaction: {:?}", signed_tx);
+
+                
+                // Send the transaction using the sequencer
                 let mut sequencer = sequencer.lock().await; 
-                sequencer.send_transaction(tx).await
+                sequencer.send_transaction(signed_tx).await // Adjust if necessary to match your sequencer's method
             }
         })
         .unwrap();

@@ -1,20 +1,15 @@
 use alloy::rpc::types::TransactionRequest;
 use serde::{Serialize, Deserialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize, Deserialize,Debug, Clone)]
-pub struct TimestampedTransaction {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TransactionData {
     pub tx: TransactionRequest,
-    pub timestamp: u64,
 }
 
-impl TimestampedTransaction {
+impl TransactionData {
     pub fn new(tx: &TransactionRequest) -> Self {  
-        let start = SystemTime::now();
-        let timestamp = start.duration_since(UNIX_EPOCH).unwrap().as_secs();
-        TimestampedTransaction { 
+        TransactionData { 
             tx: tx.clone(), 
-            timestamp 
         }
     }
 }

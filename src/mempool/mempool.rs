@@ -4,9 +4,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use alloy::primitives::keccak256;
 use alloy::rpc::types::TransactionRequest;
-use jsonrpsee::http_client::HttpClientBuilder;
 use jsonrpsee::core::client::ClientT;
-use jsonrpsee::rpc_params;
+use jsonrpsee::http_client::{HttpClientBuilder, HttpClient};
+use jsonrpsee::core::rpc_params;
 
 pub struct Mempool {
     db: Arc<Mutex<DB>>,
@@ -44,11 +44,12 @@ impl Mempool {
     
         // Serialize and store each TransactionRequest in the batch
         for transaction in &batch {
-            let serialized_tx = serde_json::to_string(transaction).unwrap(); 
+            let serialized_tx = serde_json::to_string(transaction).unwrap(); // Serialize TransactionRequest directly
             let tx_hash = format!("{:x}", keccak256(serialized_tx.clone()));
-            db.put(&tx_hash, serialized_tx).unwrap(); 
+            db.put(&tx_hash, serialized_tx).unwrap(); // Store the transaction
         }
     
+        // Log the batch after storing
         self.log_batch(&batch).await;
     
         // Send the batch to the server
@@ -56,18 +57,16 @@ impl Mempool {
             eprintln!("Failed to send batch to server: {}", e);
         }
     }
+    
 
     pub async fn send_batch_to_server(&self, batch: Vec<TransactionRequest>, port: u16) -> Result<(), Box<dyn std::error::Error>> {
-        let client = HttpClientBuilder::default().build(format!("http://127.0.0.1:{}", port)).unwrap();
+        // Create the HTTP client to connect to the JSON-RPC server
+        let client = HttpClientBuilder::default().build(format!("http://127.0.0.1:{}", port))?;
     
-        let result: Result<String, jsonrpsee::core::Error> = client
-            .request(
-                "twrep_sendTransaction",
-                rpc_params![batch],
-            )
-            .await;
-        println!("sent from sequencer");
+        // Specify the expected response type here
+        let result: Result<String, jsonrpsee::core::Error> = client.request("twrep_sendTransaction", rpc_params![batch]).await;
     
+        // Handle the response from the server
         match result {
             Ok(response) => {
                 println!("Response from server: {:?}", response);
@@ -84,6 +83,7 @@ impl Mempool {
     async fn log_batch(&self, batch: &[TransactionRequest]) {
         println!("Stored batch of transactions:");
         
+        // Log the batch directly
         match serde_json::to_string(batch) {
             Ok(serialized_batch) => {
                 println!("Batch Data: {}", serialized_batch);
