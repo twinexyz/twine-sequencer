@@ -1,66 +1,91 @@
-use crate::mempool::mempool::Mempool; 
-use alloy::rpc::types::TransactionRequest;
-use jsonrpsee::core::RpcResult;
-use jsonrpsee::types::error::ErrorObjectOwned;
+use crate::mempool::mempool::Mempool;
+use alloy::consensus::TxEnvelope;
+use jsonrpsee::types::ErrorObject; 
 use std::collections::VecDeque;
 use alloy::primitives::keccak256;
+use anyhow::{Context, Result};
+use tokio::sync::Mutex;
+use std::sync::Arc;
 
 pub struct Sequencer {
-    mempool: Mempool,
-    pending_transactions: VecDeque<TransactionRequest>,
+    mempool: Arc<Mutex<Mempool>>,
+    pending_transactions: VecDeque<TxEnvelope>,
+    batch_size: usize,
+    server_port: u16,
 }
 
-impl Sequencer {    
-    pub fn new(mempool: Mempool) -> Self {
-        Self {
-            mempool,
-            pending_transactions: VecDeque::new(),
-        }
-    }
-    
-
-    pub async fn send_transaction(&mut self, tx: TransactionRequest) -> RpcResult<String> {
-        // Validation (same as before)
-        if tx.to.is_none() {
-            return Err(ErrorObjectOwned::owned(
-                400, "Missing 'to' field", None::<()>
-            ).into());
-        }
-    
-        if let (Some(max_fee_per_gas), Some(max_priority_fee_per_gas)) = 
-            (tx.max_fee_per_gas, tx.max_priority_fee_per_gas) {
-            if max_fee_per_gas < max_priority_fee_per_gas {
-                return Err(ErrorObjectOwned::owned(
-                    400, "'max_fee_per_gas' must be >= 'max_priority_fee_per_gas'", None::<()>
-                ).into());
-            }
-        } else {
-            return Err(ErrorObjectOwned::owned(
-                400, "Missing EIP-1559 fee fields", None::<()>
-            ).into());
-        }
-    
-        // Append the transaction directly to the pending_transactions
+impl Sequencer {
+    pub async fn send_transaction(&mut self, tx: TxEnvelope) -> Result<String> {
         self.pending_transactions.push_back(tx.clone());
     
-        // Process a batch if we have enough transactions
-        if self.pending_transactions.len() >= 3 {
-            let batch: Vec<TransactionRequest> = self.pending_transactions.drain(..3).collect();
-        
-            // Store the batch in RocksDB
-            self.mempool.store_batch(batch.clone(),45001).await;
+        if self.pending_transactions.len() >= self.batch_size {
+            let batch: Vec<TxEnvelope> = self.pending_transactions.drain(..self.batch_size).collect();
     
-            // Delete each transaction from the database by its hash if needed
+            self.mempool
+                .lock()
+                .await
+                .store_batch(batch.clone(), self.server_port)
+                .await
+                .context("Failed to store batch in RocksDB") 
+                .map_err(|e| {
+                    ErrorObject::owned(1, e.to_string(), None::<()>) 
+                })?; 
+    
             for transaction in &batch {
                 let tx_hash = format!("{:x}", keccak256(serde_json::to_string(transaction).unwrap()));
-                self.mempool.delete_transaction(&tx_hash).await;
+                self.mempool.lock().await.delete_transaction(&tx_hash).await.map_err(|e| {
+                    ErrorObject::owned(1, e.to_string(), None::<()>) 
+                })?;
             }
         }
     
         let tx_hash = format!("{:x}", keccak256(serde_json::to_string(&tx).unwrap()));
-        self.mempool.add_transaction(&tx_hash, &tx).await;
+        self.mempool.lock().await.add_transaction(&tx_hash, &tx).await.map_err(|e| {
+            ErrorObject::owned(1, e.to_string(), None::<()>) 
+        })?;
     
         Ok(tx_hash)
     }
     
+
+    pub fn builder() -> SequencerBuilder {
+        SequencerBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct SequencerBuilder {
+    mempool: Option<Arc<Mutex<Mempool>>>,
+    batch_size: Option<usize>,
+    server_port: Option<u16>,
+}
+
+impl SequencerBuilder {
+    pub fn mempool(mut self, mempool: Arc<Mutex<Mempool>>) -> Self {
+        self.mempool = Some(mempool);
+        self
+    }
+
+    pub fn batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = Some(batch_size);
+        self
+    }
+
+    pub fn server_port(mut self, port: u16) -> Self {
+        self.server_port = Some(port);
+        self
+    }
+
+    pub fn build(self) -> Result<Sequencer> {
+        let mempool = self.mempool.context("Mempool not provided")?;
+        let batch_size = self.batch_size.context("Batch size not provided")?;
+        let server_port = self.server_port.context("Server port not provided")?;
+
+        Ok(Sequencer {
+            mempool,
+            pending_transactions: VecDeque::new(),
+            batch_size,
+            server_port,
+        })
+    }
 }
