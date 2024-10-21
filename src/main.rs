@@ -12,7 +12,7 @@ mod sequencer;
 async fn main() -> anyhow::Result<()> {
     let mempool = Mempool::builder()
         .path("./mempool_db")
-        .client_url("http://localhost:8545")
+        .client_url("http://localhost:45001")
         .build()?;
 
     let mempool = Arc::new(Mutex::new(mempool));

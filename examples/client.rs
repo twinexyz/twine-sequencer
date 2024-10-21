@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
             .expect("Error parsing private key");
 
     let wallet = EthereumWallet::from(signer.clone());
-    let rpc_url = "http://127.0.0.1:8550"; //reth node rpc
+    let rpc_url = "http://127.0.0.1:8550"; // Reth node RPC
 
     let provider = ProviderBuilder::new()
         .wallet(wallet.clone())
@@ -31,24 +31,27 @@ async fn main() -> Result<()> {
 
     let client = HttpClientBuilder::default().build("http://127.0.0.1:3030")?;
 
-    let nonce = provider.get_transaction_count(wallet_address).await?;
+    // Loop to send 3 transactions
+    for _ in 0..3 {
+        let nonce = provider.get_transaction_count(wallet_address).await?;
 
-    let value: U256 = U256::from(rand::thread_rng().gen_range(1..100));
+        let value: U256 = U256::from(rand::thread_rng().gen_range(1..100));
 
-    let tx = TransactionRequest::default()
-        .with_to(bob)
-        .with_nonce(nonce)
-        .with_chain_id(provider.get_chain_id().await?)
-        .with_value(value)
-        .with_gas_limit(21_000)
-        .with_max_priority_fee_per_gas(1_000_000_000)
-        .with_max_fee_per_gas(20_000_000_000);
+        let tx = TransactionRequest::default()
+            .with_to(bob)
+            .with_nonce(nonce)
+            .with_chain_id(provider.get_chain_id().await?)
+            .with_value(value)
+            .with_gas_limit(21_000)
+            .with_max_priority_fee_per_gas(1_000_000_000)
+            .with_max_fee_per_gas(20_000_000_000);
 
-    let tx_envelope = tx.build(&provider.wallet()).await?;
-    println!("Signed transaction: {:?}", tx_envelope);
+        let tx_envelope = tx.build(&provider.wallet()).await?;
+        println!("Signed transaction: {:?}", tx_envelope);
 
-    let response: String = client.request("eth_sendTransaction", [tx_envelope]).await?;
-    println!("Transaction sent to {}: response {}", bob, response);
+        let response: String = client.request("eth_sendTransaction", [tx_envelope]).await?;
+        println!("Transaction sent to {}: response {}", bob, response);
+    }
 
     Ok(())
 }
