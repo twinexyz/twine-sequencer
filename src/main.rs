@@ -3,6 +3,7 @@ use crate::rpc_server::rpc_server::RpcServer;
 use crate::sequencer::sequencer::Sequencer;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing_subscriber;
 
 mod mempool;
 mod rpc_server;
@@ -10,6 +11,8 @@ mod sequencer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+
+    tracing_subscriber::fmt::init();
     let mempool = Mempool::builder()
         .path("./mempool_db")
         .client_url("http://localhost:45001")

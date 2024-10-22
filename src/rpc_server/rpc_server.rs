@@ -1,10 +1,11 @@
-use jsonrpsee::server::{RpcModule, ServerBuilder, ServerHandle};
-use jsonrpsee::types::{ErrorObject, ErrorObjectOwned}; 
-use std::sync::Arc;
-use anyhow::{Context, Result};
+use crate::sequencer::sequencer::Sequencer;
 use alloy::consensus::TxEnvelope;
-use crate::sequencer::sequencer::Sequencer; 
+use anyhow::{Context, Result};
+use jsonrpsee::server::{RpcModule, ServerBuilder, ServerHandle};
+use jsonrpsee::types::{ErrorObject, ErrorObjectOwned};
+use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{error, info};
 
 pub struct RpcServer {
     sequencer: Arc<Mutex<Sequencer>>,
@@ -30,29 +31,49 @@ impl RpcServer {
             .register_async_method("eth_sendTransaction", move |params, _| {
                 let sequencer = Arc::clone(&sequencer_clone);
                 async move {
-                    let signed_tx: Result<TxEnvelope, ErrorObjectOwned> = params.one().map_err(|e| {
-                        ErrorObject::owned(1, format!("Failed to parse transaction: {:?}", e),None::<()>) 
-                    });
+                    let signed_tx: Result<TxEnvelope, ErrorObjectOwned> =
+                        params.one().map_err(|e| {
+                            ErrorObject::owned(
+                                1,
+                                format!("Failed to parse transaction: {:?}", e),
+                                None::<()>,
+                            )
+                        });
 
                     match signed_tx {
                         Ok(tx) => {
-                            println!("Received signed transaction: {:?}", tx);
+                            info!("Received signed transaction: {:?}", tx);
 
                             let mut sequencer = sequencer.lock().await;
                             match sequencer.send_transaction(tx).await {
-                                Ok(tx_hash) => Ok(tx_hash),
-                                Err(e) => Err(ErrorObject::owned(2, format!("Failed to send transaction: {:?}", e), None::<()>)), 
+                                Ok(tx_hash) => {
+                                    info!("Transaction sent successfully: {:?}", tx_hash);
+                                    Ok(tx_hash)
+                                }
+                                Err(e) => {
+                                    error!("Failed to send transaction: {:?}", e);
+                                    Err(ErrorObject::owned(
+                                        2,
+                                        format!("Failed to send transaction: {:?}", e),
+                                        None::<()>,
+                                    ))
+                                }
                             }
                         }
-                        Err(e) => Err(e), 
+                        Err(e) => {
+                            error!("Error parsing transaction: {:?}", e);
+                            Err(e)
+                        }
                     }
                 }
             })
             .context("Failed to register eth_sendTransaction method")?;
 
-        let handle: ServerHandle = server.start(module).context("Failed to start JSON-RPC server")?;
+        let handle: ServerHandle = server
+            .start(module)
+            .context("Failed to start JSON-RPC server")?;
 
-        println!("JSON-RPC server running on 127.0.0.1:{}", self.port);
+        info!("JSON-RPC server running on 127.0.0.1:{}", self.port);
         Ok(handle)
     }
 }
@@ -78,9 +99,6 @@ impl RpcServerBuilder {
         let sequencer = self.sequencer.context("Sequencer not provided")?;
         let port = self.port.context("Port not provided")?;
 
-        Ok(RpcServer {
-            sequencer,
-            port,
-        })
+        Ok(RpcServer { sequencer, port })
     }
 }
