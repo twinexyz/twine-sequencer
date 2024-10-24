@@ -1,14 +1,14 @@
 use crate::mempool::mempool::Mempool;
 use alloy::consensus::TxEnvelope;
-use jsonrpsee::types::ErrorObject; 
-use std::collections::VecDeque;
+use alloy::hex;
 use alloy::primitives::keccak256;
-use anyhow::{Context, Result};
-use tokio::sync::Mutex;
-use std::sync::Arc;
-use alloy::providers::RootProvider; 
+use alloy::providers::RootProvider;
 use alloy::pubsub::PubSubFrontend;
-
+use anyhow::{Context, Result};
+use jsonrpsee::types::ErrorObject;
+use std::collections::VecDeque;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 pub struct Sequencer {
     mempool: Arc<Mutex<Mempool>>,
     pending_transactions: VecDeque<TxEnvelope>,
@@ -20,34 +20,101 @@ pub struct Sequencer {
 impl Sequencer {
     pub async fn send_transaction(&mut self, tx: TxEnvelope) -> Result<String> {
         self.pending_transactions.push_back(tx.clone());
-    
+
         if self.pending_transactions.len() >= self.batch_size {
-            let batch: Vec<TxEnvelope> = self.pending_transactions.drain(..self.batch_size).collect();
-    
+            let batch: Vec<TxEnvelope> =
+                self.pending_transactions.drain(..self.batch_size).collect();
+
             self.mempool
                 .lock()
                 .await
                 .store_batch(batch.clone(), self.server_port)
                 .await
-                .context("Failed to store batch in RocksDB") 
-                .map_err(|e| ErrorObject::owned(1, e.to_string(), None::<()>) )?; 
-    
+                .context("Failed to store batch in RocksDB")
+                .map_err(|e| ErrorObject::owned(1, e.to_string(), None::<()>))?;
+
             for transaction in &batch {
-                let tx_hash = format!("{:x}", keccak256(serde_json::to_string(transaction).unwrap()));
-                self.mempool.lock().await.delete_transaction(&tx_hash).await.map_err(|e| {
-                    ErrorObject::owned(1, e.to_string(), None::<()>) 
-                })?;
+                let tx_hash = format!(
+                    "{:x}",
+                    keccak256(serde_json::to_string(transaction).unwrap())
+                );
+                self.mempool
+                    .lock()
+                    .await
+                    .delete_transaction(&tx_hash)
+                    .await
+                    .map_err(|e| ErrorObject::owned(1, e.to_string(), None::<()>))?;
             }
         }
-    
+
         let tx_hash = format!("{:x}", keccak256(serde_json::to_string(&tx).unwrap()));
-        self.mempool.lock().await.add_transaction(&tx_hash, &tx).await.map_err(|e| {
-            ErrorObject::owned(1, e.to_string(), None::<()>) 
-        })?;
-    
+        self.mempool
+            .lock()
+            .await
+            .add_transaction(&tx_hash, &tx)
+            .await
+            .map_err(|e| ErrorObject::owned(1, e.to_string(), None::<()>))?;
+
         Ok(tx_hash)
     }
-    
+
+    pub async fn send_raw_transaction(&mut self, encoded_tx: &[u8]) -> Result<String> {
+        // Broadcast the raw transaction to the network
+        let rlp_hex = hex::encode_prefixed(encoded_tx);
+
+        // Decode the raw transaction (make sure your transaction type is correct)
+        let tx: TxEnvelope =
+            serde_json::from_str(&rlp_hex).context("Failed to parse raw transaction")?;
+
+        // Add the transaction to pending transactions
+        self.pending_transactions.push_back(tx.clone());
+
+        // Process the batch if we reach the batch size
+        if self.pending_transactions.len() >= self.batch_size {
+            let batch: Vec<TxEnvelope> =
+                self.pending_transactions.drain(..self.batch_size).collect();
+
+            // Store the batch in RocksDB
+            self.mempool
+                .lock()
+                .await
+                .store_batch(batch.clone(), self.server_port)
+                .await
+                .context("Failed to store batch in RocksDB")
+                .map_err(|e| ErrorObject::owned(1, e.to_string(), None::<()>))?;
+
+            // Delete transactions from mempool after storing
+            for transaction in &batch {
+                let tx_hash = format!(
+                    "{:x}",
+                    keccak256(serde_json::to_string(transaction).unwrap())
+                );
+                self.mempool
+                    .lock()
+                    .await
+                    .delete_transaction(&tx_hash)
+                    .await
+                    .map_err(|e| ErrorObject::owned(1, e.to_string(), None::<()>))?;
+            }
+        }
+
+        // Generate the transaction hash for the current transaction
+        let tx_hash = format!("{:x}", keccak256(serde_json::to_string(&tx).unwrap()));
+        self.mempool
+            .lock()
+            .await
+            .add_transaction(&tx_hash, &tx)
+            .await
+            .map_err(|e| ErrorObject::owned(1, e.to_string(), None::<()>))?;
+
+        // Return the transaction hash as a hexadecimal string
+        Ok(tx_hash)
+    }
+
+    pub async fn get_pending_transaction_count(&self) -> Result<usize> {
+        self.mempool.lock().await.transaction_count().await
+    }
+
     pub fn get_provider(&self) -> &RootProvider<PubSubFrontend> {
         &self.provider
     }
@@ -58,14 +125,14 @@ impl Sequencer {
 }
 
 #[derive(Default)]
-pub struct SequencerBuilder { 
+pub struct SequencerBuilder {
     mempool: Option<Arc<Mutex<Mempool>>>,
     batch_size: Option<usize>,
     server_port: Option<u16>,
-    provider: Option<RootProvider<PubSubFrontend>>, // Use specific provider
+    provider: Option<RootProvider<PubSubFrontend>>,
 }
 
-impl SequencerBuilder { 
+impl SequencerBuilder {
     pub fn mempool(mut self, mempool: Arc<Mutex<Mempool>>) -> Self {
         self.mempool = Some(mempool);
         self

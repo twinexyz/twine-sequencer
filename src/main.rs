@@ -11,7 +11,7 @@ mod mempool;
 mod rpc_server;
 mod sequencer;
 
-use alloy::providers::{ProviderBuilder, WsConnect, RootProvider};
+use alloy::providers::{ProviderBuilder, RootProvider, WsConnect};
 use alloy::pubsub::PubSubFrontend;
 use anyhow::Result;
 
@@ -19,21 +19,16 @@ use anyhow::Result;
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    // Load environment variables from .env file
     dotenv().ok();
     let api_key = env::var("INFURA_PROJECT_ID").expect("INFURA_PROJECT_ID not in .env");
 
-    // Construct the Ethereum WebSocket URL
     let eth_rpc_url = format!("wss://mainnet.infura.io/ws/v3/{}", api_key);
 
-    // Create a WebSocket connection for Ethereum provider
     let eth_ws = WsConnect::new(&eth_rpc_url);
-    
-    // Create the Ethereum provider
-    let ethereum_provider: RootProvider<PubSubFrontend> = 
+
+    let ethereum_provider: RootProvider<PubSubFrontend> =
         ProviderBuilder::new().on_ws(eth_ws).await?;
 
-    // Initialize the mempool
     let mempool = Mempool::builder()
         .path("./mempool_db")
         .client_url("http://localhost:45001")
@@ -41,29 +36,27 @@ async fn main() -> Result<()> {
 
     let mempool = Arc::new(Mutex::new(mempool));
 
-    // Initialize the sequencer with the provider
     let sequencer = Sequencer::builder()
         .mempool(Arc::clone(&mempool))
         .batch_size(3)
         .server_port(3030)
-        .provider(ethereum_provider) // Set the provider here
+        .provider(ethereum_provider)
         .build()?;
 
     let sequencer = Arc::new(Mutex::new(sequencer));
 
-    // Start the JSON-RPC server
     let rpc_server = RpcServer::builder()
         .sequencer(sequencer)
         .port(3030)
         .build()?;
 
-    let _handle = rpc_server.start().await?; // Start the RPC server
+    let _handle = rpc_server.start().await?;
 
-    // Keep the server running
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-    }
+    tokio::signal::ctrl_c()
+        .await
+        .expect("Failed to install Ctrl+C signal handler");
+
+    println!("Shutting down gracefully...");
+
+    Ok(())
 }
-
-
-

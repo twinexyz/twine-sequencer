@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
 
     let client = HttpClientBuilder::default().build("http://127.0.0.1:3030")?;
 
-    for _ in 0..3 {
+    for _ in 0..1 {
         let nonce = provider.get_transaction_count(wallet_address).await?;
         info!(
             "Retrieved nonce for address {:?}: {}",

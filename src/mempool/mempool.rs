@@ -29,6 +29,18 @@ impl Mempool {
         Ok(())
     }
 
+    pub async fn transaction_count(&self) -> Result<usize> {
+        let db = self.db.lock().await;
+
+        let mut count = 0;
+        let mut iter = db.iterator(rocksdb::IteratorMode::Start);
+        while iter.next().is_some() {
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
     pub async fn delete_transaction(&self, tx_hash: &str) -> Result<()> {
         let db = self.db.lock().await;
         db.delete(tx_hash).context(format!(
